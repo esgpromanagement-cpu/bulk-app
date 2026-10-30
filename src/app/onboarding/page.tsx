@@ -1,31 +1,49 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
-// Placeholder de l'étape 1 : prouve que l'auth fonctionne. L'onboarding arrive à l'étape 2.
-export default async function OnboardingPage() {
+import { OnboardingFlow } from "./onboarding-flow";
+
+export const metadata: Metadata = {
+  title: "Ton profil — Bulk",
+};
+
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ modifier?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
   if (!user) redirect("/connexion?next=/onboarding");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("prenom, age, taille_cm, poids_kg, niveau, materiel, seances_semaine, objectif_kg")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  // Profil déjà rempli : on passe directement à la suite (sauf demande de modification).
+  const { modifier } = await searchParams;
+  if (profile && modifier === undefined) redirect("/projection");
+
+  const fullName = (user.user_metadata?.full_name ?? user.user_metadata?.name ?? "") as string;
+  const prenomGoogle = fullName.trim().split(/\s+/)[0] ?? "";
+
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-5">
-      <h1 className="text-3xl font-black tracking-tight">
-        T&apos;es connecté<span className="text-primary">.</span>
-      </h1>
-      <p className="text-muted-foreground">
-        Connecté en tant que <span className="text-foreground">{user.email}</span>. L&apos;onboarding
-        arrive très vite.
-      </p>
-      <form action="/auth/deconnexion" method="post">
-        <Button type="submit" variant="secondary" size="lg" className="w-full">
-          Se déconnecter
-        </Button>
-      </form>
-    </div>
+    <OnboardingFlow
+      initial={
+        profile
+          ? {
+              ...profile,
+              poids_kg: Number(profile.poids_kg),
+              objectif_kg: Number(profile.objectif_kg),
+            }
+          : { prenom: prenomGoogle }
+      }
+    />
   );
 }
